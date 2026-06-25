@@ -1,0 +1,22 @@
+# Swift / SwiftPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Build output
+dist/
+*.app
+*.dSYM/
+
+# Xcode
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# Secrets — never commit VPN credentials
+credentials.json
+*.creds

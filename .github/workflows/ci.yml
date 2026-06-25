@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Build engine + CLI
+        run: swift build --product ovpn-test
+
+      - name: Build universal app bundle
+        run: scripts/build-app.sh
+
+      - name: Verify universal binary
+        run: |
+          BIN="dist/OpenVPN Speed Test.app/Contents/MacOS/OVPNSpeedTestApp"
+          file "$BIN"
+          lipo -archs "$BIN"

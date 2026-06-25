@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build universal app bundle
+        run: scripts/build-app.sh
+
+      - name: Verify universal binary
+        run: lipo -archs "dist/OpenVPN Speed Test.app/Contents/MacOS/OVPNSpeedTestApp"
+
+      - name: Zip the app
+        run: |
+          cd dist
+          ditto -c -k --keepParent "OpenVPN Speed Test.app" "OpenVPN-Speed-Test-${{ github.ref_name }}-universal.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
+          generate_release_notes: true
+          body: |
+            Universal build (Apple Silicon + Intel) of OpenVPN Speed Test.
+
+            **Install:** unzip, move to `/Applications`, then right-click → Open on first launch
+            (ad-hoc signed, not notarized). For speed tests: `brew install openvpn`.
