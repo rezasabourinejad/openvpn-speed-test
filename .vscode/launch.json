@@ -1,0 +1,44 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:openvpn - macapp}",
+      "name": "Debug ovpn-test",
+      "target": "ovpn-test",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug ovpn-test"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:openvpn - macapp}",
+      "name": "Release ovpn-test",
+      "target": "ovpn-test",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release ovpn-test"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:openvpn - macapp}",
+      "name": "Debug OVPNSpeedTestApp",
+      "target": "OVPNSpeedTestApp",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug OVPNSpeedTestApp"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:openvpn - macapp}",
+      "name": "Release OVPNSpeedTestApp",
+      "target": "OVPNSpeedTestApp",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release OVPNSpeedTestApp"
+    }
+  ]
+}
