@@ -7,6 +7,12 @@ struct ContentView: View {
     @State private var showImporter = false
     @State private var dropTargeted = false
 
+    // Per-profile credential editor sheet.
+    @State private var showCredEditor = false
+    @State private var editorIDs: Set<String> = []
+    @State private var editorUser = ""
+    @State private var editorPass = ""
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -26,6 +32,48 @@ struct ContentView: View {
         .onDrop(of: [.fileURL], isTargeted: $dropTargeted) { providers in
             handleDrop(providers); return true
         }
+        .sheet(isPresented: $showCredEditor) { credentialEditor }
+    }
+
+    // MARK: - Per-profile credential editor
+
+    private func openCredentialEditor(for ids: Set<String>) {
+        editorIDs = ids
+        // Pre-fill from the existing override if exactly one profile is selected.
+        if ids.count == 1, let id = ids.first, let c = model.override(for: id) {
+            editorUser = c.username; editorPass = c.password
+        } else {
+            editorUser = ""; editorPass = ""
+        }
+        showCredEditor = true
+    }
+
+    private var credentialEditor: some View {
+        let names = model.rows.filter { editorIDs.contains($0.id) }.map(\.name)
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("Custom credentials").font(.headline)
+            Text(names.count == 1 ? names[0] : "\(names.count) profiles")
+                .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+            Text("Overrides the provider credentials for \(names.count == 1 ? "this profile" : "these profiles").")
+                .font(.caption2).foregroundStyle(.tertiary)
+            TextField("username", text: $editorUser).textFieldStyle(.roundedBorder)
+            SecureField("password", text: $editorPass).textFieldStyle(.roundedBorder)
+            HStack {
+                Button("Clear override", role: .destructive) {
+                    model.setOverride(ids: editorIDs, username: "", password: "")
+                    showCredEditor = false
+                }
+                Spacer()
+                Button("Cancel") { showCredEditor = false }
+                Button("Save") {
+                    model.setOverride(ids: editorIDs, username: editorUser, password: editorPass)
+                    showCredEditor = false
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(editorUser.isEmpty && editorPass.isEmpty)
+            }
+        }
+        .padding(20).frame(width: 360)
     }
 
     // MARK: - Header
@@ -96,15 +144,28 @@ struct ContentView: View {
         .padding(.horizontal, 16).padding(.vertical, 8)
     }
 
+    private var providerBinding: Binding<String> {
+        Binding(get: { model.selectedProvider }, set: { model.selectProvider($0) })
+    }
+
     private var credentialFields: some View {
         HStack(spacing: 6) {
-            Image(systemName: "person.fill").foregroundStyle(.secondary).font(.caption)
-            TextField("VPN username", text: $model.username)
-                .textFieldStyle(.roundedBorder).frame(width: 150)
-                .onSubmit { model.saveCredentials() }
-            SecureField("password", text: $model.password)
-                .textFieldStyle(.roundedBorder).frame(width: 130)
-                .onSubmit { model.saveCredentials() }
+            Image(systemName: "key.fill").foregroundStyle(.secondary).font(.caption)
+            if model.providers.count > 1 {
+                Picker("", selection: providerBinding) {
+                    ForEach(model.providers, id: \.self) { Text($0).tag($0) }
+                }
+                .labelsHidden().frame(width: 130)
+                .help("Credentials apply to all profiles from this provider")
+            } else if !model.selectedProvider.isEmpty {
+                Text(model.selectedProvider).font(.caption).foregroundStyle(.secondary).frame(minWidth: 80)
+            }
+            TextField("username", text: $model.groupUsername)
+                .textFieldStyle(.roundedBorder).frame(width: 140)
+                .onChange(of: model.groupUsername) { _ in model.saveGroupCredentials() }
+            SecureField("password", text: $model.groupPassword)
+                .textFieldStyle(.roundedBorder).frame(width: 120)
+                .onChange(of: model.groupPassword) { _ in model.saveGroupCredentials() }
         }
     }
 
@@ -114,9 +175,15 @@ struct ContentView: View {
         ZStack {
             Table(model.sortedDisplayRows, selection: $model.selection) {
                 TableColumn("Profile") { row in
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(row.name).fontWeight(.medium)
-                        Text(row.location).font(.caption2).foregroundStyle(.secondary)
+                    HStack(spacing: 6) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(row.name).fontWeight(.medium)
+                            Text(row.location).font(.caption2).foregroundStyle(.secondary)
+                        }
+                        if row.hasOverride {
+                            Image(systemName: "key.fill").font(.caption2).foregroundStyle(.tint)
+                                .help("Uses custom credentials")
+                        }
                     }
                 }.width(min: 160, ideal: 200)
 
@@ -129,8 +196,13 @@ struct ContentView: View {
             }
             .tableStyle(.inset)
             .contextMenu(forSelectionType: String.self) { ids in
-                Button("Remove", role: .destructive) { model.remove(ids: ids) }
+                Button("Set credentials…") { openCredentialEditor(for: ids) }
+                if ids.contains(where: { id in model.rows.first(where: { $0.id == id })?.hasOverride == true }) {
+                    Button("Clear custom credentials") { model.setOverride(ids: ids, username: "", password: "") }
+                }
+                Divider()
                 Button("Reveal in Finder") { revealInFinder(ids) }
+                Button("Remove", role: .destructive) { model.remove(ids: ids) }
             }
 
             if model.rows.isEmpty { emptyState }

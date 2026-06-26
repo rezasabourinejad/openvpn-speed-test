@@ -24,13 +24,22 @@ jobs:
           cd dist
           ditto -c -k --keepParent "OpenVPN Speed Test.app" "OpenVPN-Speed-Test-${{ github.ref_name }}-universal.zip"
 
+      - name: Build DMG
+        run: scripts/make-dmg.sh "${{ github.ref_name }}"
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
+          files: |
+            dist/*.dmg
+            dist/*.zip
           generate_release_notes: true
           body: |
             Universal build (Apple Silicon + Intel) of OpenVPN Speed Test.
 
-            **Install:** unzip, move to `/Applications`, then right-click → Open on first launch
-            (ad-hoc signed, not notarized). For speed tests: `brew install openvpn`.
+            ### Install
+            1. Download the **.dmg**, open it, drag **OpenVPN Speed Test** into Applications.
+            2. First launch: right-click the app → **Open** → **Open** (ad-hoc signed, not notarized).
+            3. For speed tests, install the engine: `brew install openvpn`, then click **Setup** in the app.
+
+            (A `.zip` of the `.app` is also attached if you prefer.)

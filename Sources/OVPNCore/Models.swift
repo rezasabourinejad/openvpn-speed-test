@@ -30,6 +30,16 @@ public struct OVPNProfile: Identifiable, Hashable, Sendable {
     /// First remote host (servers in a Nord profile share one IP across ports).
     public var host: String? { remotes.first?.host }
 
+    /// Provider grouping key derived from the profile name / CN, e.g.
+    /// "de1208.nordvpn.com" → "nordvpn.com", "uk-london.expressvpn.com" → "expressvpn.com".
+    /// Profiles from the same provider share one set of credentials by default.
+    public var providerKey: String {
+        var labels = name.lowercased().split(separator: ".").map(String.init)
+        while let last = labels.last, ["udp", "tcp", "ovpn"].contains(last) { labels.removeLast() }
+        if labels.count >= 2 { return labels.suffix(2).joined(separator: ".") }
+        return labels.first ?? name.lowercased()
+    }
+
     /// The TCP port we probe for latency.
     /// For tcp profiles we use the real remote port; for udp we fall back to 443,
     /// which every Nord node keeps open and answers cleanly (ICMP is rate-limited).

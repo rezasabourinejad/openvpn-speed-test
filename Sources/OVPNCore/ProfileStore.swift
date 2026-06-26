@@ -66,39 +66,89 @@ public final class ProfileStore {
     }
 }
 
-/// Persists the service username/password (and last settings) outside source code.
-/// Stored in the app's Application Support dir with 0600 perms — not in the bundle,
-/// not in git.
+/// Persists VPN credentials outside source code (Application Support, mode 0600 — not in
+/// the bundle, not in git).
+///
+/// Credentials are organised **per provider** (e.g. all `*.nordvpn.com` profiles share one
+/// username/password), with an optional **per-profile override** for special cases, and a
+/// **default** fallback. Resolution order for a profile: override → provider group → default.
 public final class CredentialStore {
-    private let fileURL: URL
-
-    public init(appName: String = "OVPNSpeedTest") {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let root = base.appendingPathComponent(appName, isDirectory: true)
-        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        self.fileURL = root.appendingPathComponent("credentials.json")
-    }
-
-    public struct Credentials: Codable, Sendable {
+    public struct Credentials: Codable, Sendable, Equatable {
         public var username: String
         public var password: String
         public init(username: String = "", password: String = "") {
             self.username = username
             self.password = password
         }
+        public var isEmpty: Bool { username.isEmpty && password.isEmpty }
     }
 
-    public func load() -> Credentials {
-        guard let data = try? Data(contentsOf: fileURL),
-              let c = try? JSONDecoder().decode(Credentials.self, from: data) else {
-            return Credentials()
+    private struct Store: Codable {
+        var groups: [String: Credentials]
+        var overrides: [String: Credentials]
+        var def: Credentials?
+    }
+    /// Old single-credential format, for one-time migration.
+    private struct Legacy: Codable { var username: String; var password: String }
+
+    private let fileURL: URL
+    private var store: Store
+
+    public init(appName: String = "OVPNSpeedTest") {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let root = base.appendingPathComponent(appName, isDirectory: true)
+        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        self.fileURL = root.appendingPathComponent("credentials.json")
+        self.store = Self.read(fileURL)
+    }
+
+    private static func read(_ url: URL) -> Store {
+        guard let data = try? Data(contentsOf: url) else {
+            return Store(groups: [:], overrides: [:], def: nil)
         }
-        return c
+        if let s = try? JSONDecoder().decode(Store.self, from: data) { return s }
+        // Migrate the old single-credential file into the default fallback.
+        if let l = try? JSONDecoder().decode(Legacy.self, from: data) {
+            return Store(groups: [:], overrides: [:],
+                         def: Credentials(username: l.username, password: l.password))
+        }
+        return Store(groups: [:], overrides: [:], def: nil)
     }
 
-    public func save(_ c: Credentials) {
-        guard let data = try? JSONEncoder().encode(c) else { return }
+    private func persist() {
+        guard let data = try? JSONEncoder().encode(store) else { return }
         try? data.write(to: fileURL)
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: fileURL.path)
+    }
+
+    // MARK: - Provider groups
+
+    public func groupCredentials(_ provider: String) -> Credentials {
+        store.groups[provider] ?? (store.def ?? Credentials())
+    }
+    public func setGroup(_ provider: String, _ c: Credentials) {
+        if c.isEmpty { store.groups[provider] = nil } else { store.groups[provider] = c }
+        persist()
+    }
+
+    // MARK: - Per-profile overrides
+
+    public func hasOverride(_ profileID: String) -> Bool {
+        !(store.overrides[profileID]?.isEmpty ?? true)
+    }
+    public func override(_ profileID: String) -> Credentials? { store.overrides[profileID] }
+    public func setOverride(_ profileID: String, _ c: Credentials?) {
+        if let c, !c.isEmpty { store.overrides[profileID] = c } else { store.overrides[profileID] = nil }
+        persist()
+    }
+
+    // MARK: - Resolution
+
+    /// Effective credentials for a profile: override → provider group → default.
+    public func resolve(for profile: OVPNProfile) -> Credentials? {
+        if let o = store.overrides[profile.id], !o.isEmpty { return o }
+        if let g = store.groups[profile.providerKey], !g.isEmpty { return g }
+        if let d = store.def, !d.isEmpty { return d }
+        return nil
     }
 }

@@ -86,7 +86,8 @@ public final class OpenVPNRunner {
             "--connect-retry-max", "1",
             "--connect-timeout", "10",
             "--writepid", work.pidFile.path,
-            "--log", work.logFile.path,
+            // NOTE: do NOT pass --log; it redirects openvpn's output to a file, and we need
+            // it on stdout/stderr so we can detect "Initialization Sequence Completed".
             "--verb", "3",
         ]
 
@@ -161,7 +162,6 @@ public final class OpenVPNRunner {
         let config: URL
         let creds: URL
         let pidFile: URL
-        let logFile: URL
     }
 
     private func makeWorkDir(profile: OVPNProfile, username: String, password: String) throws -> Work {
@@ -175,7 +175,6 @@ public final class OpenVPNRunner {
         let credsURL = dir.appendingPathComponent("creds.txt")
         let configURL = dir.appendingPathComponent("config.ovpn")
         let pidURL = dir.appendingPathComponent("ovpn.pid")
-        let logURL = dir.appendingPathComponent("ovpn.log")
 
         // Remove the bare `auth-user-pass` directive; we pass the creds file via CLI flag.
         text = text
@@ -188,7 +187,7 @@ public final class OpenVPNRunner {
         // Creds file must not be world-readable.
         try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: credsURL.path)
 
-        return Work(dir: dir, config: configURL, creds: credsURL, pidFile: pidURL, logFile: logURL)
+        return Work(dir: dir, config: configURL, creds: credsURL, pidFile: pidURL)
     }
 
     // MARK: - Line reading
