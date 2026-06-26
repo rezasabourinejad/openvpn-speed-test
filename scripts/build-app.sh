@@ -25,15 +25,15 @@ for a in $ARCHS; do ARCH_FLAGS+=("--arch" "$a"); done
 echo "▶︎ Building $PRODUCT (release) for: $ARCHS"
 swift build -c release "${ARCH_FLAGS[@]}" --product "$PRODUCT"
 
-# Locate the produced binary (universal builds land under .build/apple/...).
-BIN=""
-for candidate in \
-    ".build/apple/Products/Release/$PRODUCT" \
-    ".build/release/$PRODUCT"; do
-    if [[ -f "$candidate" ]]; then BIN="$candidate"; break; fi
-done
-if [[ -z "$BIN" ]]; then
-    BIN="$(swift build -c release "${ARCH_FLAGS[@]}" --product "$PRODUCT" --show-bin-path)/$PRODUCT"
+# Locate the produced binary. Ask SwiftPM for the exact bin path of the arch set we
+# just built — hardcoding ".build/apple/Products/Release" is wrong for single-arch
+# builds (their output lives under .build/<triple>/release), and a stale universal
+# binary left there from a previous run would get bundled instead of the fresh one.
+BINDIR="$(swift build -c release "${ARCH_FLAGS[@]}" --product "$PRODUCT" --show-bin-path)"
+BIN="$BINDIR/$PRODUCT"
+if [[ ! -f "$BIN" ]]; then
+    echo "✗ Built binary not found at: $BIN" >&2
+    exit 1
 fi
 echo "▶︎ Binary: $BIN"
 file "$BIN" || true

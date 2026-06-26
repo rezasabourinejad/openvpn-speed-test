@@ -63,6 +63,38 @@ struct PingCell: View {
     }
 }
 
+/// Destination ping with a quality color and a small ICMP/TCP method tag.
+struct DestPingCell: View {
+    let row: ProfileRow
+
+    private var color: Color {
+        guard let p = row.destPing else { return .secondary }
+        switch p {
+        case ..<80: return .green
+        case ..<150: return .yellow
+        case ..<250: return .orange
+        default: return .red
+        }
+    }
+
+    var body: some View {
+        if let p = row.destPing {
+            HStack(spacing: 4) {
+                Text("\(Int(p.rounded())) ms")
+                    .font(.system(.body, design: .monospaced)).fontWeight(.semibold)
+                    .foregroundStyle(color)
+                if let m = row.destMethod {
+                    Text(m).font(.system(size: 8, weight: .medium)).foregroundStyle(.tertiary)
+                }
+            }
+        } else if row.busy {
+            Text("…").foregroundStyle(.tertiary)
+        } else {
+            Text("—").foregroundStyle(.tertiary)
+        }
+    }
+}
+
 struct LossCell: View {
     let loss: Double?
     var body: some View {

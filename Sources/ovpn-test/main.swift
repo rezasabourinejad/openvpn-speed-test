@@ -42,6 +42,7 @@ guard let cmd = args.first else {
       ovpn-test ping <file-or-dir>...
       ovpn-test speed
       ovpn-test connect <file> -u <user> -p <pass>
+      ovpn-test dest <file> -u <user> -p <pass> --ip <ip> [--port <port>]
     """)
     exit(1)
 }
@@ -108,6 +109,37 @@ case "connect":
             return await tester.run()
         }
         print(String(format: "\n↓ %.1f Mbps   ↑ %.1f Mbps", result.downloadMbps, result.uploadMbps))
+    } catch {
+        print("❌ \(error)")
+        exit(1)
+    }
+
+case "dest":
+    guard let file = args.dropFirst().first(where: { !$0.hasPrefix("-") }),
+          let profile = ProfileParser.parse(URL(fileURLWithPath: file)) else {
+        print("usage: ovpn-test dest <file> -u <user> -p <pass> --ip <ip> [--port <port>]"); exit(1)
+    }
+    let user = arg(["-u", "--user"]) ?? ""
+    let pass = arg(["-p", "--pass"]) ?? ""
+    let ip = arg(["--ip", "--dest"]) ?? ""
+    let port = arg(["--port"]).flatMap { UInt16($0) }
+    guard !user.isEmpty, !pass.isEmpty, !ip.isEmpty else { print("need -u, -p and --ip"); exit(1) }
+
+    let runner = OpenVPNRunner()
+    do {
+        let dest = try await runner.withTunnel(
+            profile: profile, username: user, password: pass,
+            onLog: { line in FileHandle.standardError.write(("  [ovpn] " + line + "\n").data(using: .utf8)!) }
+        ) { () -> DestinationResult in
+            print("\n✅ Tunnel up — probing \(ip) through it...")
+            let pinger = DestinationPinger(tcpFallbackPort: port)
+            return await pinger.measure(host: ip)
+        }
+        let r = dest.result
+        print(String(format: "\n%@ via %@:  ping %@  jitter %@  loss %.0f%%  (min %@ / max %@)",
+                     ip, dest.method.rawValue,
+                     fmt(r.median, "ms"), fmt(r.jitter, "ms"), r.lossPct,
+                     fmt(r.min), fmt(r.max)))
     } catch {
         print("❌ \(error)")
         exit(1)

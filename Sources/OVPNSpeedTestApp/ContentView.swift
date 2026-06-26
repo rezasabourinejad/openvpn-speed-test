@@ -130,6 +130,10 @@ struct ContentView: View {
             .disabled(model.rows.isEmpty || model.isBusy)
             .help("Connect through each selected profile and measure real download/upload")
 
+            Divider().frame(height: 18)
+
+            destinationFields
+
             if model.isBusy {
                 Button(role: .destructive) { model.stop() } label: {
                     Label("Stop", systemImage: "stop.fill")
@@ -142,6 +146,23 @@ struct ContentView: View {
             credentialFields
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
+    }
+
+    /// Destination IP + optional fallback port + the "Test Dest" trigger.
+    private var destinationFields: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "target").foregroundStyle(.secondary).font(.caption)
+            TextField("dest IP / host", text: $model.destinationHost)
+                .textFieldStyle(.roundedBorder).frame(width: 120)
+            TextField("port", text: $model.destinationPort)
+                .textFieldStyle(.roundedBorder).frame(width: 48)
+                .help("Optional. If the destination drops ICMP, latency is timed via TCP to this port.")
+            Button { model.testDestinationSelected() } label: {
+                Label("Test Dest", systemImage: "scope")
+            }
+            .disabled(model.rows.isEmpty || model.isBusy || model.destinationHost.trimmingCharacters(in: .whitespaces).isEmpty)
+            .help("Connect through each selected profile and measure real ping + packet loss to this destination")
+        }
     }
 
     private var providerBinding: Binding<String> {
@@ -190,6 +211,8 @@ struct ContentView: View {
                 TableColumn("Ping") { row in PingCell(row: row) }.width(90)
                 TableColumn("Jitter") { row in Metric(row.jitter, "ms") }.width(70)
                 TableColumn("Loss") { row in LossCell(loss: row.loss) }.width(60)
+                TableColumn("Dest Ping") { row in DestPingCell(row: row) }.width(100)
+                TableColumn("Dest Loss") { row in LossCell(loss: row.destLoss) }.width(70)
                 TableColumn("↓ Download") { row in SpeedCell(value: row.down, status: row.status, phase: "↓") }.width(110)
                 TableColumn("↑ Upload") { row in SpeedCell(value: row.up, status: row.status, phase: "↑") }.width(110)
                 TableColumn("Status") { row in StatusCell(row: row) }.width(min: 120, ideal: 180)
