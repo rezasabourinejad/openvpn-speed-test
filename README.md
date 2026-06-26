@@ -6,8 +6,6 @@ and real download/upload speed** — and instantly see which server is best.
 
 Built with SwiftUI. Universal binary — runs natively on both **Apple Silicon** and **Intel** Macs.
 
-![screenshot](docs/screenshot.png)
-
 ---
 
 ## Why
