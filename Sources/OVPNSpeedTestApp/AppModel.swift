@@ -11,8 +11,11 @@ struct ProfileRow: Identifiable {
     /// Live status text ("connecting…", "↓ 84 Mbps", "auth failed", …).
     var status: String = ""
     var busy: Bool = false
+    /// True if this profile has its own credential override.
+    var hasOverride: Bool = false
 
     var name: String { profile.name }
+    var provider: String { profile.providerKey }
     var location: String { profile.host ?? "—" }
     var ping: Double? { latency?.median }
     var jitter: Double? { latency?.jitter }
@@ -25,24 +28,27 @@ struct ProfileRow: Identifiable {
 final class AppModel: ObservableObject {
     @Published var rows: [ProfileRow] = []
     @Published var selection: Set<String> = []
-    @Published var username: String = ""
-    @Published var password: String = ""
     @Published var status: String = "Add some .ovpn profiles to begin."
     @Published var isBusy = false
     @Published var privileged = false
     @Published var openvpnInstalled = true
+
+    // Per-provider credentials shown in the toolbar.
+    @Published var selectedProvider: String = ""
+    @Published var groupUsername: String = ""
+    @Published var groupPassword: String = ""
 
     private let store = ProfileStore()
     private let credStore = CredentialStore()
     private var currentTask: Task<Void, Never>?
 
     init() {
-        let creds = credStore.load()
-        username = creds.username
-        password = creds.password
         refreshEnvironment()
         reload()
     }
+
+    /// Distinct providers across the library (for the credentials picker).
+    var providers: [String] { Array(Set(rows.map { $0.provider })).sorted() }
 
     // MARK: - Environment
 
@@ -56,14 +62,52 @@ final class AppModel: ObservableObject {
     func reload() {
         let profiles = store.load()
         rows = profiles.map { p in
-            rows.first(where: { $0.id == p.id }) ?? ProfileRow(profile: p)
+            var row = rows.first(where: { $0.id == p.id }) ?? ProfileRow(profile: p)
+            row.hasOverride = credStore.hasOverride(p.id)
+            return row
         }
         if rows.isEmpty {
             status = "Add some .ovpn profiles to begin."
         } else {
             status = "\(rows.count) profile\(rows.count == 1 ? "" : "s") in library."
         }
+        // Keep the credentials picker pointed at a valid provider.
+        if selectedProvider.isEmpty || !providers.contains(selectedProvider) {
+            selectProvider(providers.first ?? "")
+        }
     }
+
+    // MARK: - Credentials
+
+    /// Point the toolbar fields at a provider and load its saved credentials.
+    func selectProvider(_ provider: String) {
+        selectedProvider = provider
+        let c = credStore.groupCredentials(provider)
+        groupUsername = c.username
+        groupPassword = c.password
+    }
+
+    /// Save the toolbar fields as the selected provider's credentials.
+    func saveGroupCredentials() {
+        guard !selectedProvider.isEmpty else { return }
+        credStore.setGroup(selectedProvider, .init(username: groupUsername, password: groupPassword))
+    }
+
+    /// Override credentials for specific profiles (nil clears the override).
+    func setOverride(ids: Set<String>, username: String, password: String) {
+        let creds: CredentialStore.Credentials? =
+            (username.isEmpty && password.isEmpty) ? nil : .init(username: username, password: password)
+        for id in ids { credStore.setOverride(id, creds) }
+        for i in rows.indices where ids.contains(rows[i].id) {
+            rows[i].hasOverride = credStore.hasOverride(rows[i].id)
+        }
+        let n = ids.count
+        status = creds == nil ? "Cleared override for \(n) profile\(n == 1 ? "" : "s")."
+                              : "Set custom credentials for \(n) profile\(n == 1 ? "" : "s")."
+    }
+
+    /// Existing override for a single profile (for pre-filling the editor).
+    func override(for id: String) -> CredentialStore.Credentials? { credStore.override(id) }
 
     func importProfiles(_ urls: [URL]) {
         let (added, failed) = store.addAll(from: urls)
@@ -82,10 +126,6 @@ final class AppModel: ObservableObject {
         }
         selection.subtract(ids)
         reload()
-    }
-
-    func saveCredentials() {
-        credStore.save(.init(username: username, password: password))
     }
 
     // MARK: - Privilege
@@ -139,19 +179,31 @@ final class AppModel: ObservableObject {
         let targets = selection.isEmpty ? rows : rows.filter { selection.contains($0.id) }
         guard !targets.isEmpty else { status = "Select at least one profile."; return }
         guard openvpnInstalled else { status = "openvpn not installed — run: brew install openvpn"; return }
-        guard !username.isEmpty, !password.isEmpty else { status = "Enter your VPN username and password first."; return }
         guard privileged else { status = "Click “Setup” to grant openvpn privileged access first."; return }
 
-        isBusy = true
-        saveCredentials()
-        let user = username, pass = password
-        let profiles = targets.map(\.profile)
+        // Save whatever is currently typed for the selected provider before running.
+        saveGroupCredentials()
 
+        // Resolve credentials per profile (override → provider → default).
+        let jobs: [(OVPNProfile, CredentialStore.Credentials)?] = targets.map { row in
+            guard let c = credStore.resolve(for: row.profile), !c.isEmpty else { return nil }
+            return (row.profile, c)
+        }
+        if jobs.contains(where: { $0 == nil }) {
+            let missing = Set(targets.enumerated().filter { jobs[$0.offset] == nil }.map { $0.element.provider })
+            status = "No credentials for: \(missing.sorted().joined(separator: ", ")). Set them first."
+            return
+        }
+        let resolved = jobs.compactMap { $0 }
+
+        isBusy = true
         currentTask = Task {
-            for (idx, profile) in profiles.enumerated() {
+            for (idx, job) in resolved.enumerated() {
+                let (profile, creds) = job
+                let user = creds.username, pass = creds.password
                 if Task.isCancelled { break }
                 await MainActor.run {
-                    self.status = "[\(idx + 1)/\(profiles.count)] \(profile.name): pinging…"
+                    self.status = "[\(idx + 1)/\(resolved.count)] \(profile.name): pinging…"
                     self.setBusy(true, id: profile.id)
                     self.setStatus("pinging…", id: profile.id)
                 }

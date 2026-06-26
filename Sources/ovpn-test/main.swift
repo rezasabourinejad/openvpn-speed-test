@@ -113,6 +113,18 @@ case "connect":
         exit(1)
     }
 
+case "check":
+    print("openvpn binary : \(OpenVPNRunner.locateBinary() ?? "NOT FOUND (brew install openvpn)")")
+    print("privileged     : \(PrivilegeSetup.isConfigured())")
+
+case "setup":
+    do {
+        try PrivilegeSetup.install()
+        print("install ok — privileged now: \(PrivilegeSetup.isConfigured())")
+    } catch {
+        print("❌ \(error)"); exit(1)
+    }
+
 default:
     print("unknown command: \(cmd)")
     exit(1)

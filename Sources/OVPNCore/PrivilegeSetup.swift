@@ -7,17 +7,25 @@ public enum PrivilegeSetup {
     public static let sudoersPath = "/etc/sudoers.d/ovpn-speedtest"
 
     /// True if passwordless sudo for openvpn already works (no prompt needed).
-    /// `sudo -n -l <binary>` exits 0 iff the command is permitted without a password.
+    ///
+    /// We can't use `sudo -n -l <binary>`: it exits 0 whenever the user *may* run the
+    /// command at all (e.g. via a blanket `(ALL) ALL` rule), even if a password would be
+    /// required. Instead we actually invoke `sudo -n <binary> --version` and check whether
+    /// sudo refused for lack of a password. (`openvpn --version` exits 1 by design — we look
+    /// at stderr, not the exit code.)
     public static func isConfigured() -> Bool {
         guard let binary = OpenVPNRunner.locateBinary() else { return false }
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/usr/bin/sudo")
-        p.arguments = ["-n", "-l", binary]
+        p.arguments = ["-n", binary, "--version"]
         p.standardOutput = FileHandle.nullDevice
-        p.standardError = FileHandle.nullDevice
+        let err = Pipe()
+        p.standardError = err
         do { try p.run() } catch { return false }
+        let errData = err.fileHandleForReading.readDataToEndOfFile()
         p.waitUntilExit()
-        return p.terminationStatus == 0
+        let errStr = String(data: errData, encoding: .utf8) ?? ""
+        return !errStr.contains("password is required") && !errStr.contains("terminal is required")
     }
 
     public enum SetupError: Error, CustomStringConvertible {
